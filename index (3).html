@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DSS de ventas Walmart</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+:root{--bg:#eef2f7;--card:#fff;--ink:#12315c;--mut:#5b6b82;--line:#d6dde8;--blue:#1f5fbf;--amber:#f2a900;--teal:#16897a}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:'IBM Plex Sans',system-ui,sans-serif;line-height:1.45}
+header{background:var(--ink);color:#fff;padding:20px 16px 14px}
+header h1{margin:0;font-size:1.5rem}
+header p{margin:4px 0 0;color:#c4d2ea;font-size:.92rem;max-width:70ch}
+.filters{position:sticky;top:0;z-index:5;background:#fff;border-bottom:1px solid var(--line);padding:10px 16px;display:flex;flex-wrap:wrap;gap:12px}
+.filters label{display:flex;flex-direction:column;font-size:.8rem;color:var(--mut);gap:2px}
+select{font:inherit;font-size:.95rem;padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:#fff;color:var(--ink);min-width:150px}
+select:focus-visible{outline:2px solid var(--amber)}
+main{max-width:1200px;margin:0 auto;padding:16px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));background:var(--card);border:1px solid var(--line);border-radius:10px;margin-bottom:16px}
+.kpi{padding:14px 18px;border-right:1px solid var(--line)}
+.kpi:last-child{border-right:0}
+.kpi span{font-size:.82rem;color:var(--mut)}
+.kpi b{display:block;font-size:1.7rem;margin-top:2px}
+.kpi:first-child b{color:var(--blue)}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr));gap:16px}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 16px;min-width:0}
+.panel.wide{grid-column:1/-1}
+.panel h2{margin:0;font-size:1.02rem}
+.panel p{margin:2px 0 10px;font-size:.84rem;color:var(--mut)}
+.box{position:relative;height:280px}
+.wide .box{height:300px}
+.tw{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:.9rem}
+th,td{padding:7px 8px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+th:first-child,td:first-child{text-align:left}
+th{color:var(--mut);font-weight:600}
+tr.sel td{background:#fff4d6}
+#err{display:none;margin:16px;padding:12px;border:1px solid #c0392b;color:#c0392b;border-radius:8px;background:#fff}
+footer{text-align:center;color:var(--mut);font-size:.8rem;padding:10px 16px 24px}
+@media(max-width:600px){.kpi{border-right:0;border-bottom:1px solid var(--line)}.kpi b{font-size:1.4rem}.box{height:240px}}
+</style>
+</head>
+<body>
+<header>
+  <h1>Ventas de 45 tiendas Walmart, 2010 a 2012</h1>
+  <p>Usa los filtros para ver qué tiendas venden más, cuándo se concentran las ventas y si los factores externos se relacionan con ellas.</p>
+</header>
+<div class="filters">
+  <label>Año<select id="fYear"><option value="all">Todos</option><option>2010</option><option>2011</option><option>2012</option></select></label>
+  <label>Tienda<select id="fStore"><option value="all">Todas</option></select></label>
+  <label>Tipo de semana<select id="fHol"><option value="all">Todas</option><option value="1">Solo festivas</option><option value="0">Solo no festivas</option></select></label>
+  <label>Factor externo<select id="fVar">
+    <option value="temp">Temperatura (°F)</option><option value="fuel">Precio del combustible (USD)</option>
+    <option value="cpi">CPI</option><option value="unemp">Desempleo (%)</option></select></label>
+</div>
+<div id="err">No se pudo cargar data.json. Si abriste el archivo con doble clic, sírvelo con un servidor local (python -m http.server) o publícalo en GitHub Pages.</div>
+<main>
+  <section class="kpis" aria-label="Indicadores clave">
+    <div class="kpi"><span>Ventas totales</span><b id="k1">-</b></div>
+    <div class="kpi"><span>Venta semanal promedio por tienda</span><b id="k2">-</b></div>
+    <div class="kpi"><span>Tienda líder</span><b id="k3">-</b></div>
+    <div class="kpi"><span>Semana festiva vs. no festiva</span><b id="k4">-</b></div>
+  </section>
+  <div class="grid">
+    <section class="panel wide"><h2 id="t1">Ventas semanales</h2><p>Línea de tiempo. Los picos de noviembre y diciembre marcan la temporada alta.</p><div class="box"><canvas id="c1"></canvas></div></section>
+    <section class="panel"><h2>Las 10 tiendas con más ventas</h2><p>La tienda seleccionada se resalta en ámbar.</p><div class="box"><canvas id="c2"></canvas></div></section>
+    <section class="panel"><h2>Estacionalidad mensual</h2><p>Venta promedio por tienda y semana, según el mes.</p><div class="box"><canvas id="c5"></canvas></div></section>
+    <section class="panel"><h2>Semanas festivas y no festivas</h2><p>Venta semanal promedio por tienda. No cambia con el filtro de tipo de semana.</p><div class="box"><canvas id="c3"></canvas></div></section>
+    <section class="panel"><h2 id="t4">Ventas y factor externo</h2><p id="s4"></p><div class="box"><canvas id="c4"></canvas></div></section>
+    <section class="panel wide"><h2>Detalle de las 10 tiendas líderes</h2><p>Porcentaje sobre las ventas de todas las tiendas en el periodo filtrado.</p>
+      <div class="tw"><table><thead><tr><th>Tienda</th><th>Ventas totales</th><th>Venta semanal promedio</th><th>% del total</th></tr></thead><tbody id="tb"></tbody></table></div></section>
+  </div>
+</main>
+<footer>Fuente: Walmart Sales (Kaggle). Datos procesados en data.json.</footer>
+<script>
+const $=id=>document.getElementById(id);
+const USD=n=>'$'+Math.round(n).toLocaleString('en-US');
+const MIL=n=>'$'+(n/1e6).toFixed(n>=1e9?0:1).replace(/\B(?=(\d{3})+(?!\d))/g,',')+' M';
+const MES=['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+const VARS={temp:'Temperatura (°F)',fuel:'Precio del combustible (USD)',cpi:'CPI',unemp:'Desempleo (%)'};
+const BLUE='#1f5fbf',AMB='#f2a900',TEAL='#16897a',GRID='#e3e8f0';
+let ALL=[],charts={};
+const sum=a=>a.reduce((s,x)=>s+x,0), avg=a=>a.length?sum(a)/a.length:0;
+function corr(x,y){const n=x.length;if(n<3)return NaN;const mx=avg(x),my=avg(y);let a=0,b=0,c=0;
+  for(let i=0;i<n;i++){a+=(x[i]-mx)*(y[i]-my);b+=(x[i]-mx)**2;c+=(y[i]-my)**2}return a/Math.sqrt(b*c)}
+function draw(id,cfg){
+  if(charts[id]){charts[id].data=cfg.data;charts[id].options=cfg.options;charts[id].update();return}
+  charts[id]=new Chart($(id),cfg)}
+const base=(extra={})=>({responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},...extra});
+const axes=(xt,yt,yfmt)=>({x:{title:{display:!!xt,text:xt},grid:{display:false}},y:{title:{display:!!yt,text:yt},grid:{color:GRID},ticks:{callback:yfmt||(v=>v)}}});
+
+fetch('data.json').then(r=>{if(!r.ok)throw 0;return r.json()}).then(d=>{
+  ALL=d.rows.map(r=>({store:r[0],date:r[1],year:+r[1].slice(0,4),month:+r[1].slice(5,7)-1,sales:r[2],holiday:r[3],temp:r[4],fuel:r[5],cpi:r[6],unemp:r[7]}));
+  const st=[...new Set(ALL.map(r=>r.store))].sort((a,b)=>a-b);
+  $('fStore').innerHTML='<option value="all">Todas</option>'+st.map(s=>`<option value="${s}">Tienda ${s}</option>`).join('');
+  ['fYear','fStore','fHol','fVar'].forEach(i=>$(i).addEventListener('change',render));
+  render();
+}).catch(()=>{$('err').style.display='block'});
+
+function render(){
+  const y=$('fYear').value,s=$('fStore').value,h=$('fHol').value,v=$('fVar').value;
+  const fy=r=>y==='all'||r.year==y, fs=r=>s==='all'||r.store==s, fh=r=>h==='all'||r.holiday==h;
+  const R=ALL.filter(r=>fy(r)&&fs(r)&&fh(r));
+  const Rt=ALL.filter(r=>fy(r)&&fh(r)); // todas las tiendas, para ranking
+  const sel=s==='all'?null:+s;
+
+  // tiendas
+  const byS={};Rt.forEach(r=>{(byS[r.store]??=[]).push(r.sales)});
+  const rank=Object.entries(byS).map(([k,a])=>({store:+k,tot:sum(a),avg:avg(a)})).sort((a,b)=>b.tot-a.tot);
+  const totAll=sum(rank.map(x=>x.tot));
+
+  // KPIs
+  $('k1').textContent=MIL(sum(R.map(r=>r.sales)));
+  $('k2').textContent=USD(avg(R.map(r=>r.sales)));
+  $('k3').textContent=rank.length?'Tienda '+rank[0].store:'-';
+  const Rk=ALL.filter(r=>fy(r)&&fs(r));
+  const hv=avg(Rk.filter(r=>r.holiday).map(r=>r.sales)),nv=avg(Rk.filter(r=>!r.holiday).map(r=>r.sales));
+  $('k4').textContent=hv&&nv?((hv/nv-1)*100>=0?'+':'')+((hv/nv-1)*100).toFixed(1)+'%':'-';
+
+  // 1 línea semanal
+  const w={};R.forEach(r=>{w[r.date]=(w[r.date]||0)+r.sales});
+  const dates=Object.keys(w).sort();
+  $('t1').textContent=s==='all'?'Ventas semanales de toda la cadena':'Ventas semanales de la tienda '+s;
+  draw('c1',{type:'line',data:{labels:dates,datasets:[{data:dates.map(d=>w[d]),borderColor:BLUE,backgroundColor:BLUE+'22',fill:true,pointRadius:0,borderWidth:2,tension:.2}]},
+    options:base({scales:{...axes('','USD',v=>MIL(v)),x:{grid:{display:false},ticks:{maxTicksLimit:8}}},interaction:{intersect:false,mode:'index'}})});
+
+  // 2 barras top 10
+  const top=rank.slice(0,10);
+  draw('c2',{type:'bar',data:{labels:top.map(x=>'Tienda '+x.store),datasets:[{data:top.map(x=>x.tot),backgroundColor:top.map(x=>x.store===sel?AMB:BLUE)}]},
+    options:base({indexAxis:'y',scales:{x:{grid:{color:GRID},ticks:{callback:v=>MIL(v)}},y:{grid:{display:false}}}})});
+
+  // 3 festivas vs no
+  draw('c3',{type:'bar',data:{labels:['No festivas','Festivas'],datasets:[{data:[nv,hv],backgroundColor:[BLUE,AMB]}]},
+    options:base({scales:axes('','USD por tienda-semana',v=>USD(v))})});
+
+  // 4 dispersión
+  const pts=R.map(r=>({x:r[v],y:r.sales}));
+  const rr=corr(pts.map(p=>p.x),pts.map(p=>p.y));
+  $('t4').textContent='Ventas vs. '+VARS[v];
+  $('s4').textContent=isNaN(rr)?'Hay muy pocos datos para calcular la relación.':'Correlación: '+rr.toFixed(2)+(Math.abs(rr)<0.2?' (relación débil: el factor explica poco por sí solo).':Math.abs(rr)<0.5?' (relación moderada).':' (relación fuerte).');
+  draw('c4',{type:'scatter',data:{datasets:[{data:pts,backgroundColor:TEAL+'80',pointRadius:2}]},
+    options:base({scales:{x:{title:{display:true,text:VARS[v]},grid:{color:GRID}},y:{title:{display:true,text:'Venta semanal (USD)'},grid:{color:GRID},ticks:{callback:v=>MIL(v)}}}})});
+
+  // 5 estacionalidad
+  const m=MES.map((_,i)=>avg(R.filter(r=>r.month===i).map(r=>r.sales)));
+  draw('c5',{type:'bar',data:{labels:MES,datasets:[{data:m,backgroundColor:m.map((_,i)=>i>=10?AMB:BLUE)}]},
+    options:base({scales:axes('','USD',v=>USD(v))})});
+
+  // 6 tabla
+  $('tb').innerHTML=top.map(x=>`<tr class="${x.store===sel?'sel':''}"><td>Tienda ${x.store}</td><td>${USD(x.tot)}</td><td>${USD(x.avg)}</td><td>${(x.tot/totAll*100).toFixed(1)}%</td></tr>`).join('')
+    ||'<tr><td colspan="4">No hay datos para este filtro.</td></tr>';
+}
+</script>
+</body>
+</html>
